@@ -1,5 +1,5 @@
 ---
-Assignment 1
+title: Assignment 1
 ---
 
 This assignment explores animations of deformable obejcts, and it has two parts. The first part is a 3D mass-and-spring cloth simulation, which simulates dynamic folding and wrinkling, but doesn't handle self-collisions in the cloth. The second part is a simulator for a 2D deformable Gingerman, with three types of constitutive models and impulse-based collision.
@@ -64,11 +64,11 @@ Assuming that the cloth is initially at rest, the rest lengths of the springs ar
  
 ## Forces
 ### Spring forces
-For two particles $p_1,p_2$ connected by a spring of stiffness $k_{\text{spring}}$ with rest length $l_0$, the spring force acting on $p_1$ is
-$$F_{\text{spring}}=k_{\text{spring}}(l_0-\|p_1-p_2\|)\frac{p_1-p_2}{\|p_1-p_2\|}$$
+For two particles $p_1,p_2$ connected by a spring of stiffness $k_{\mathrm{spring}}$ with rest length $l_0$, the spring force acting on $p_1$ is
+$$F_{\mathrm{spring}}=k_{\mathrm{spring}}(l_0-\|p_1-p_2\|)\frac{p_1-p_2}{\|p_1-p_2\|}$$
 
 ### Gravity
-The gravity acting on each particle is simply $\mathbf{F}_{\text{gravity}}=[0\ -mg\ 0]$ where $g=9.81$.
+The gravity acting on each particle is simply $\mathbf{F}_{\mathrm{gravity}}=[0\ -mg\ 0]$ where $g=9.81$.
 
 Additionally, you will write the time stepping function following Newton's second law. Pin the positions of the particles at indices $[0,0]$ and $[0,n-1]$, by simply setting their velocities to zero in the integration.
 
@@ -77,13 +77,13 @@ After implementing spring forces and gravity as well as setting up the time step
 ### Damping
 Now we will add some damping so that the simulation converges. There are two types of damping:
 
-1. Stiffness proportional damping: For two particles $\mathbf{p}_1,\mathbf{p}_2$ connected by a spring of stiffness $k_{\text{spring}}$ with rest length $l_0$, the stiffness *damping* force corresponding to the spring force acting on $p_1$ is
-$$\mathbf{F}_{\text{stiffness\_damp}}=-k_{\text{stiffness\_damp}}k_{\text{spring}}\frac{\mathbf{p}_2-\mathbf{p}_1}{\|\mathbf{p}_2-\mathbf{p}_1\|}(\mathbf{v}_{i,j}\cdot \frac{\mathbf{p}_2-\mathbf{p}_1}{\|\mathbf{p}_2-\mathbf{p}_1\|})$$
+1. Stiffness proportional damping: For two particles $\mathbf{p}_1,\mathbf{p}_2$ connected by a spring of stiffness $k_{\mathrm{spring}}$ with rest length $l_0$, the stiffness *damping* force corresponding to the spring force acting on $p_1$ is
+$$\mathbf{F}_{\mathrm{stiffness\_damp}}=-k_{\mathrm{stiffness\_damp}}k_{\mathrm{spring}}\frac{\mathbf{p}_2-\mathbf{p}_1}{\|\mathbf{p}_2-\mathbf{p}_1\|}(\mathbf{v}_{i,j}\cdot \frac{\mathbf{p}_2-\mathbf{p}_1}{\|\mathbf{p}_2-\mathbf{p}_1\|})$$
 
 2. Mass proportional damping:
-$$\mathbf{F}_{\text{mass\_damp}}=-k_{\text{mass\_damp}}m \mathbf{v}_{i,j}$$
+$$\mathbf{F}_{\mathrm{mass\_damp}}=-k_{\mathrm{mass\_damp}}m \mathbf{v}_{i,j}$$
 
-Changing the default parameters damping parameters $k_{\text{stiffness\_damp}}$ and $k_{\text{mass\_damp}}$ and observe the effects of changing the parameters. With default parameters, your result should look like [this reference video](refs/phase3.mp4).
+Changing the default parameters damping parameters $k_{\mathrm{stiffness\_damp}}$ and $k_{\mathrm{mass\_damp}}$ and observe the effects of changing the parameters. With default parameters, your result should look like [this reference video](refs/phase3.mp4).
 
 ## Collision
 
@@ -148,15 +148,15 @@ $$\mathbf{f}_i=-\frac{\partial U}{\partial\mathbf{x}_i}=-\sum_e A_e\frac{\partia
 ## Compute symplectic Euler time integration
 This part is very similar to the cloth simulation in PA1. In addition to the forces computed from the previous step, you will need to account for the vertices with pinned positions, as well as the vertex where spring force is applied. In addition, the object movement is bounded by the four edges of the GUI, i.e. at every time step, you should detect if any vertex goes beyond the boundary, and project it onto the boundary.
 
-[This video](refs/gingerbread_pinned.mov) shows the target behavior of the simulator, with time steps of 0.167 milliseconds. Note that your simulation result might not exactly match the video, due to arbitrary pinning of vertices. The behavior should agree though, i.e. a handle-based force should exhibit in the mouse drag direction.
+[This video](refs/gingerbread_pinned.mp4) shows the target behavior of the simulator, with time steps of 0.167 milliseconds. Note that your simulation result might not exactly match the video, due to arbitrary pinning of vertices. The behavior should agree though, i.e. a handle-based force should exhibit in the mouse drag direction.
 
 Once you finish implementing the simulator, you should switch between the three different constitutive models, observe their differences, and report your findings. You are also encouraged to create sliders for the Young's modulus and Poisson's ratio (with appropriate ranges) and play with different values of these parameters. Note that for the changes in parameters to take effect, you should also update the Lame coefficients correspondingly.
 
 ## Collision against hard boundaries
-The collision is essentially the same as what you did for cloth! We use the very same collision detection process for a set of boundaries stored in `house.boundaries`, where each boundary has attributes like `p`, which stores one of its edge points, `n`, which stores its normal and `eps` that stores the radius of the contact region. Try to implement the very same collision detection and response process as you did for cloth and test your collision detection by switching to the collision mode and make sure your gingerbread man bounce in the house correctly as shown in this [video](refs/gingerbread_housedance.mov).
+The collision is essentially the same as what you did for cloth! We use the very same collision detection process for a set of boundaries stored in `house.boundaries`, where each boundary has attributes like `p`, which stores one of its edge points, `n`, which stores its normal and `eps` that stores the radius of the contact region. Try to implement the very same collision detection and response process as you did for cloth and test your collision detection by switching to the collision mode and make sure your gingerbread man bounce in the house correctly as shown in this [video](refs/gingerbread_housedance.mp4).
 
 ## Testing your implementation
-To test your implementation, we provide a simple test scenario of stretching/compressing a rectangle in the alternate starter code `fem_test_starter.py`. Here, the vertices of the rest shape are stored in `x_rest`, and the vertices of the compressed/stretched shapes are stored in `x_compress` and `x_stretch`, which get assigned to the field storing the deformed vertex positions `x`. The top and bottom edges are pinned, i.e. in the compressed mode, the top edge are fixed at 0.6 times the rectangle's original height, and in the stretched mode, twice the original height. For calculating $F$, you will need $D_0$ from the rest shape $\mathbf{x}_\mathrm{rest}$ and $D$ from the deformed shape $\mathbf{x}$. If you plug your implementation into this starter code, you will be able to see a clear difference in the three models under the stretched/compressed settings that should match [this video](refs/compression_test.mov). Pressing the UP/DOWN arrow keys switches between the stretched/compressed shapes. 
+To test your implementation, we provide a simple test scenario of stretching/compressing a rectangle in the alternate starter code `fem_test_starter.py`. Here, the vertices of the rest shape are stored in `x_rest`, and the vertices of the compressed/stretched shapes are stored in `x_compress` and `x_stretch`, which get assigned to the field storing the deformed vertex positions `x`. The top and bottom edges are pinned, i.e. in the compressed mode, the top edge are fixed at 0.6 times the rectangle's original height, and in the stretched mode, twice the original height. For calculating $F$, you will need $D_0$ from the rest shape $\mathbf{x}_\mathrm{rest}$ and $D$ from the deformed shape $\mathbf{x}$. If you plug your implementation into this starter code, you will be able to see a clear difference in the three models under the stretched/compressed settings that should match [this video](refs/compression_test.mp4). Pressing the UP/DOWN arrow keys switches between the stretched/compressed shapes. 
 
 # Submission
 You need to include two things in your submission:
