@@ -2,7 +2,7 @@
 title: Assignment 1
 ---
 
-This assignment explores animations of deformable obejcts, and it has two parts. The first part is a 3D mass-and-spring cloth simulation, which simulates dynamic folding and wrinkling, but doesn't handle self-collisions in the cloth. The second part is a simulator for a 2D deformable Gingerman, with three types of constitutive models and impulse-based collision.
+This assignment explores animations of deformable obejcts, and it has two parts. The first part is a 3D mass-and-spring cloth simulation, which simulates dynamic folding and wrinkling, but doesn't handle self-collisions in the cloth. The second part is a simulator for a 2D deformable gingerbread man, with three types of constitutive models and impulse-based collision.
 
 # Preamble: Setting up Taichi
 Install Taichi with `pip install taichi` and make sure you are able to run the [Julia Fractal](https://docs.taichi-lang.org/docs/hello_world).  You also need the `pywavefront` package for reading the collision object.
@@ -96,12 +96,12 @@ In the code, you may access the configuration of the sphere by querying attribut
 Now, initialze your collision object with the configuration `Init.CLOTH_TABLE` instead and try to implement collision detection against a disk-shaped table. The configurations of the tabletop, such as its radius, center and width are stored as attributes of obstacle and you can use those for collision detection. Your $128 \times 128$ cloth shall behave as in this [video](refs/phase5.mp4).
 
 # Second Part: Simulating deformable 2D objects
-In this part, you will implement a simulator for a 2D deformable Gingerman, with three types of constitutive models.
+In this part, you will implement a simulator for a 2D deformable gingerbread man, with three types of constitutive models.
 
 ## Code Structure and GUI
 You are provided with a GUI system, with the following modes and controls already implemented. Make sure you play with the starter code to get familiar with these controls.
 
-Run `python3 fem_starter.py` and you should see an interface, with a Gingerman displayed at the center.
+Run `python3 fem_starter.py` and you should see an interface, with a gingerbread man displayed at the center.
 
 By default, the GUI window is set to size 600 by 600. Do NOT resize the window if you are using a Mac, since this will mess up the mouse cursor detection in Taichi GGUI, due to potential clamping of the window display on the screen. However, window resizing is fine on Ubuntu. We have not tested on Windows machines, so please let us know if it works.
 
@@ -124,7 +124,7 @@ The key/mouse controls are as follows:
 * Left mouse button down (in edit mode): Adds/Removes pin on the vertex that is closest to the cursor position.
 * Left mouse button down *and drag* (in simulation mode): Creates a spring force along the mouse drag direction with magnitude proportional to the amount of mouse drag that is exerted on the single vertex closest to the cursor position when the left mouse button pressed. Only one spring force is active at a time, i.e. the previous force is removed when a new force is created on an arbitrary vertex.
 
-Now go ahead and make the gingerman move!
+Now go ahead and make the gingerbread man move!
 
 ## Compute the deformation gradient $\mathbf{F}$
 The first step is simple: Use the formula from class to compute the deformation gradient. You are already provided with a vector **x** that contains the vertex positions, and a vector of triangles (finite elements) where each entry is a tuple containing the indices of the three vertices composing a face. Simply write two functions: one computes the $\mathbf{D}$ (or $\mathbf{D}_0$, when called for the initial state) of each element, and the other computes $\mathbf{F}$ using the formula from class. Note that everything is in 2D, as what has been illustrated in class.
@@ -160,6 +160,7 @@ To test your implementation, we provide a simple test scenario of stretching/com
 
 # Submission
 You need to include two things in your submission:
+
 * A pdf file including a link to the chosen commit for your submission. If you submit a  link just to your repository, we will assume that you would like us to look at the latest commit on the `main` branch.
 * A demo video demonstrating the functionalities of your simulators (please make sure that we can easily run your code and generate similar results shown in the demo). You can do something creative with both of the simulators in this demo, like shading the tables and gingerbread better, adding some particle system like snow to the background. You can also gain some bonus credit if you would like to go an extra mile to implement self-collision for the cloth or the gingerbread man. Any other technical improvements like adding friction to all the contacts are also encouraged (but of course, not necessary)!
 
