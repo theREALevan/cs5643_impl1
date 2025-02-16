@@ -17,7 +17,7 @@ pip install taichi pywavefront
 
 Be sure your Taichi version is at least 1.7.3.
 
-For the starter code, go to our assignment repository at [this place](https://github.coecis.cornell.edu/cs5643/assignments) and make a fork. Your fork should be a private repository. This will let you easily pull updates related to bug fixes and later assignments from our repository into yours. 
+For the starter code, go to our assignment repository at [this place](https://github.coecis.cornell.edu/cs5643/assignments-sp25) and make a fork. Your fork should be a private repository. This will let you easily pull updates related to bug fixes and later assignments from our repository into yours. 
 
 Then clone your repository with:
 
