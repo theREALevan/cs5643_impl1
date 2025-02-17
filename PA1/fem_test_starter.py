@@ -54,21 +54,15 @@ for i in range(N_triangles):
 # We also need to draw the edges
 edges_set = set()
 for i in range(N_triangles):
-    edges_set.add(frozenset([faces[i][0],faces[i][1]]))
-    edges_set.add(frozenset([faces[i][1],faces[i][2]]))
-    edges_set.add(frozenset([faces[i][2],faces[i][0]]))
+    edges_set.add((faces[i][0],faces[i][1]) if faces[i][0] < faces[i][1] else (faces[i][1], faces[i][0]))
+    edges_set.add((faces[i][1],faces[i][2]) if faces[i][1] < faces[i][2] else (faces[i][2], faces[i][1]))
+    edges_set.add((faces[i][2],faces[i][0]) if faces[i][2] < faces[i][0] else (faces[i][0], faces[i][2]))
 
 # Number of edges
 N_edges = len(edges_set)
+np_edges = np.array([list(e) for e in edges_set])
 edges = ti.Vector.field(2, shape=N_edges, dtype=int)
-
-edge_idx = 0
-for edge in edges_set:
-    cnt = 0
-    for val in edge:
-        edges[edge_idx][cnt] = val
-        cnt += 1
-    edge_idx += 1
+edges.from_numpy(np_edges)
 
 #############################################################
 ## Deformable object Simulation
