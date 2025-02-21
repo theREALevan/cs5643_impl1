@@ -72,10 +72,11 @@ def initialize_mesh_indices():
         indices[quad_id * 6 + 5] = (i + 1) * n + j
 
     for i, j in ti.ndrange(n, n):
-        if (i // 4 + j // 4) % 2 == 0:
-            colors[i * n + j] = (0.22, 0.72, 0.52)
+        if (i % 20 < 4 and i % 20 >= 0) or (j % 20 < 4 and j % 20 >= 0):
+            colors[i * n + j] = (1.0, 0.97, 0.95)
         else:
-            colors[i * n + j] = (1, 0.334, 0.52)
+            colors[i * n + j] = (1.0, 0.2, 0.4)
+
 
 # Copy vertex state into mesh vertex positions
 @ti.kernel
@@ -112,20 +113,15 @@ for ii in range(300):
     # Increase current time t by dt
 
     update_vertices()
-    cam_pos = np.array([0.0, 0.0, 4.0])
 
-    camera.position(cam_pos[0], cam_pos[1], cam_pos[2]);
-    camera.lookat(0.0, 0.2, 0.5)
-    camera.fov(30.0)
     scene.set_camera(camera)
-
     scene.point_light(pos=(0, 1, 2), color=(1, 1, 1))
     scene.ambient_light((0.5, 0.5, 0.5))
     scene.mesh(vertices,
                indices=indices,
                per_vertex_color=colors,
                two_sided=True)
-
+    
     # Uncomment this part for collision
     # scene.mesh(obstacle.verts,
     #            indices=obstacle.tris,
