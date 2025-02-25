@@ -143,7 +143,7 @@ def timestep():
         # Compute vector from sphere center to particle
         diff_ball = x[i, j] - ball_center[0]
         d = diff_ball.norm() + 1e-6 # avoid division by zero
-        if d < ball_radius + contact_eps:
+        if d < ball_radius + 10*contact_eps:
             n_dir = diff_ball / d
             # Remove inward velocity component
             v[i, j] = v[i, j] - ti.min(0.0, v[i, j].dot(n_dir)) * n_dir
@@ -208,7 +208,7 @@ initialize_mesh_indices()
 
 substeps = int((1/200) / dt)
 # Run sim
-for ii in range(300000):
+for ii in range(1000):
     # TODO:
     # Call timestep() function
     # Increase current time t by dt
