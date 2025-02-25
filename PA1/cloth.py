@@ -85,7 +85,7 @@ def timestep():
             
             if 0 <= ni < n and 0 <= nj < n: # check in bounds
                 diff = x[i, j] - x[ni, nj]
-                dist = diff.norm()
+                dist = diff.norm() + 1e-6 # avoid division by zero
                 unit_dir = diff / dist
                 # Spring force
                 spring_force = -k_struct * (dist - structural_rest) * unit_dir
@@ -103,7 +103,7 @@ def timestep():
             
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
-                dist = diff.norm()
+                dist = diff.norm() + 1e-6 # avoid division by zero
                 unit_dir = diff / dist
                 # Spring force
                 spring_force = -k_shear * (dist - shear_rest) * unit_dir
@@ -121,7 +121,7 @@ def timestep():
             
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
-                dist = diff.norm()
+                dist = diff.norm() + 1e-6 # avoid division by zero
                 unit_dir = diff / dist
                 # Spring force
                 spring_force = -k_flex * (dist - flexion_rest) * unit_dir
@@ -139,6 +139,14 @@ def timestep():
         a = force / particle_mass
         v[i, j] += dt * a
         x[i, j] += dt * v[i, j]
+
+        # Compute vector from sphere center to particle
+        diff_ball = x[i, j] - ball_center[0]
+        d = diff_ball.norm() + 1e-6 # avoid division by zero
+        if d < ball_radius + contact_eps:
+            n_dir = diff_ball / d
+            # Remove inward velocity component
+            v[i, j] = v[i, j] - ti.min(0.0, v[i, j].dot(n_dir)) * n_dir
 
 
 ### GUI
@@ -220,9 +228,9 @@ for ii in range(300000):
                two_sided=True)
     
     # Uncomment this part for collision
-    # scene.mesh(obstacle.verts,
-    #            indices=obstacle.tris,
-    #            color=(0.8, 0.7, 0.6))
+    scene.mesh(obstacle.verts,
+               indices=obstacle.tris,
+               color=(0.8, 0.7, 0.6))
     canvas.scene(scene)
     
     if record:
