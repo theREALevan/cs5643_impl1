@@ -101,12 +101,64 @@ draw_force = False
 pins = ti.field(ti.i32, N)
 num_pins = ti.field(ti.i32, ())
 
+
+Dm = ti.Matrix.field(2, 2, ti.f32, N_triangles)  
+F = ti.Matrix.field(2, 2, ti.f32, N_triangles)  
+
+@ti.kernel
+def compute_Dm():
+    for i in range(N_triangles):
+        v0, v1, v2 = triangles[i]
+        X0 = x[v0]
+        Dm[i] = ti.Matrix.cols([x[v1] - X0, x[v2] - X0])
+
+compute_Dm() 
+
+# stress tensor
+P = ti.Matrix.field(2, 2, ti.f32, N_triangles) 
+
 # TODO: Put additional fields here for storing D (etc.)
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
 def timestep(currmode: int):
-    # TODO: Integrate the internal elastic forces and gravity 
+    # Compute Lame parameters (updated 2D formula)
+    nu = PoissonsRatio[None]
+    mu = YoungsModulus[None] / (2 * (1 + nu))
+    lmbda = (YoungsModulus[None] * nu) / ((1 + nu) * (1 - nu))
+    
+    # Existing F calculation
+    for i in range(N_triangles):
+        v0, v1, v2 = triangles[i]
+        x0 = x[v0]
+        Ds = ti.Matrix.cols([x[v1] - x0, x[v2] - x0])
+        F[i] = Ds @ Dm[i].inverse()
+        
+        if ModelSelector[None] == 0:  # Corotated
+            R, S = ti.polar_decompose(F[i])
+            epsilon_c = S - ti.Matrix.identity(ti.f32, 2)
+            trace_epsilon = epsilon_c.trace()
+            P[i] = R @ (2*mu*epsilon_c + lmbda*trace_epsilon*ti.Matrix.identity(ti.f32, 2))
+        elif ModelSelector[None] == 1:  # StVK
+            E = 0.5*(F[i].transpose() @ F[i] - ti.Matrix.identity(ti.f32, 2))
+            P[i] = F[i] @ (2*mu*E + lmbda*E.trace()*ti.Matrix.identity(ti.f32, 2))
+        elif ModelSelector[None] == 2:  # Neo-Hookean
+            J = F[i].determinant()
+            FinvT = F[i].inverse().transpose()
+            P[i] = mu*(F[i] - FinvT) + lmbda*ti.log(J)*FinvT
+            
+    compute_forces()
 
+    for i in range(N):
+        force[i] += m * gravity
+    
+    forces_np = force.to_numpy()
+    for i in range(N):
+        print(forces_np[i])
+    
+    ti.sync()  # Ensure kernel execution completes before continuing
+    
+        
+            
     ## Add the user-input spring force
     for i in ti.ndrange(num_pins[None]):
         v[pins[i]] = ti.Vector([0,0])
@@ -119,7 +171,46 @@ def timestep(currmode: int):
     if currmode == 2:
         # TODO: Resolve Collision
         pass
+    
 
+    
+    for i in range(N):
+        v[i] += dh * force[i] / m
+        x[i] += dh * v[i]
+
+    
+    
+@ti.kernel
+def compute_forces():
+    # Reset forces
+    for i in range(N):
+        force[i] = ti.Vector([0.0, 0.0])
+
+    # Loop over all triangles to compute internal elastic forces
+    for e in range(N_triangles):
+        v0, v1, v2 = triangles[e]
+        
+        # Compute inverse of Dm
+        Dm_inv = Dm[e].inverse()
+        
+        # Compute dF/dx (gradient of F w.r.t. vertex positions)
+        dF_dx = ti.Matrix.cols([
+            [-Dm_inv[0, 0] - Dm_inv[1, 0], Dm_inv[0, 0], Dm_inv[1, 0]],
+            [-Dm_inv[0, 1] - Dm_inv[1, 1], Dm_inv[0, 1], Dm_inv[1, 1]]
+        ])
+        
+        # Compute area of the triangle
+        Ae = 0.5 * abs(Dm[e].determinant())
+        
+        # Compute force contribution from this triangle
+        P_local = P[e]  # First Piola-Kirchhoff stress tensor
+        H = -Ae * P_local @ dF_dx  # Elemental force matrix
+        
+        # Map elemental forces to vertices
+        force[v0] += ti.Vector([H[0, 0], H[1, 0]])
+        force[v1] += ti.Vector([H[0, 1], H[1, 1]])
+        force[v2] += ti.Vector([H[0, 2], H[1, 2]])
+        
 ##############################################################
 
 ## GUI
