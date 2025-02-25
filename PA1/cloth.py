@@ -35,12 +35,15 @@ ball_radius = 0.3
 
 x = ti.Vector.field(3, dtype=float, shape=(n, n))
 # TODO: Create field for particle velocities
+v = ti.Vector.field(3, dtype=float, shape=(n, n))
 
 # Set up initial state on the y  = 0.6 plane
 @ti.kernel
 def init_cloth():
     # TODO
-    pass
+    for i, j in ti.ndrange(n, n):
+        x[i, j] = [i * quad_size, 0.6, j * quad_size]
+        v[i, j] = [0, 0, 0]
 
 # Execute a single symplectic Euler timestep
 @ti.kernel
