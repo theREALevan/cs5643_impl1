@@ -58,7 +58,7 @@ def timestep():
     shear_rest = ti.sqrt(2.0) * quad_size
     flexion_rest = 2.0 * quad_size
 
-    k_struct = 200
+    k_struct = 400
     k_shear = 100
     k_flex = 400
 
