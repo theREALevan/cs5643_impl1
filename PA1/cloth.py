@@ -21,6 +21,15 @@ quad_size = 1.0 / (n-1)
 gravity = ti.Vector([0, -9.8, 0])
 particle_mass = 1.0 / (n*n)
 
+# timestep for explicit integration
+dt = 4e-3 / n
+substeps = int(1 / 60 // dt)
+
+# spring properties
+default_k_spring = 3e0*n
+k_damp = default_k_spring * 1e-4 # spring damping
+k_drag = 1e0 * particle_mass # viscous damping
+
 # some particles can be pinned in place
 # pins are named by indices in the particle grid
 # TODO: Add pinned particles
