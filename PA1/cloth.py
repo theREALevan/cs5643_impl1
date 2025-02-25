@@ -62,6 +62,9 @@ def timestep():
     k_shear = 100
     k_flex = 400
 
+    k_stiff_damp = 0.0000002
+    k_mass_damp = 0.0000001
+
     for i, j in ti.ndrange(n, n):
         is_pinned = False
         for pin in ti.static(pins):
@@ -83,7 +86,12 @@ def timestep():
             if 0 <= ni < n and 0 <= nj < n: # check in bounds
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                force += -k_struct * (dist - structural_rest) * (diff / dist)
+                unit_dir = diff / dist
+                # Spring force
+                spring_force = -k_struct * (dist - structural_rest) * unit_dir
+                # Stiffness damping force
+                spring_damp = -k_stiff_damp * k_struct * unit_dir * (v[i, j].dot(unit_dir))
+                force += spring_force + spring_damp
 
         # Shear springs
         for offset in ti.static([ti.Vector([1, 1]), ti.Vector([1, -1]),
@@ -96,7 +104,12 @@ def timestep():
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                force += -k_shear * (dist - shear_rest) * (diff / dist)
+                unit_dir = diff / dist
+                # Spring force
+                spring_force = -k_shear * (dist - shear_rest) * unit_dir
+                # Stiffness damping force
+                spring_damp = -k_stiff_damp * k_shear * unit_dir * (v[i, j].dot(unit_dir))
+                force += spring_force + spring_damp
 
         # Flexion springs
         for offset in ti.static([ti.Vector([2, 0]), ti.Vector([-2, 0]),
@@ -109,10 +122,18 @@ def timestep():
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                force += -k_flex * (dist - flexion_rest) * (diff / dist)
+                unit_dir = diff / dist
+                # Spring force
+                spring_force = -k_flex * (dist - flexion_rest) * unit_dir
+                # Stiffness damping force
+                spring_damp = -k_stiff_damp * k_flex * unit_dir * (v[i, j].dot(unit_dir))
+                force += spring_force + spring_damp
 
         # add gravitational force
         force += gravity * particle_mass
+
+        # Add mass-proportional damping force
+        force += -k_mass_damp * particle_mass * v[i, j]
 
         # Symplectic Euler step
         a = force / particle_mass
@@ -177,7 +198,7 @@ current_t = 0.0
 init_cloth()
 initialize_mesh_indices()
 
-substeps = int((1/400) / dt)
+substeps = int((1/200) / dt)
 # Run sim
 for ii in range(300000):
     # TODO:
@@ -186,7 +207,7 @@ for ii in range(300000):
 
     for _ in range(substeps):
         timestep()
-    current_t += 1/400
+    current_t += 1/200
 
     update_vertices()
 
