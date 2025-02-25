@@ -37,7 +37,7 @@ x = ti.Vector.field(3, dtype=float, shape=(n, n))
 # TODO: Create field for particle velocities
 v = ti.Vector.field(3, dtype=float, shape=(n, n))
 
-dt = 1/600
+dt = 1/60000
 
 # Set up initial state on the y  = 0.6 plane
 @ti.kernel
@@ -45,7 +45,7 @@ def init_cloth():
     # TODO
     for i, j in ti.ndrange(n, n):
         x[i, j] = [i * quad_size, 0.6, j * quad_size]
-        v[i, j] = [0, 0, 0]
+        v[i, j] = [0.0, 0.0, 0.0]
 
 # Execute a single symplectic Euler timestep
 @ti.kernel
@@ -56,9 +56,9 @@ def timestep():
     shear_rest = ti.sqrt(2.0) * quad_size
     flexion_rest = 2.0 * quad_size
 
-    k_struct = 10
-    k_shear = 0.1
-    k_flex = 0.1
+    k_struct = 200
+    k_shear = 100
+    k_flex = 400
     for i, j in ti.ndrange(n, n):
         is_pinned = False
         for pin in ti.static(pins):
@@ -164,14 +164,16 @@ current_t = 0.0
 init_cloth()
 initialize_mesh_indices()
 
+substeps = int((1/400) / dt)
 # Run sim
-for ii in range(3000):
+for ii in range(300000):
     # TODO:
     # Call timestep() function
     # Increase current time t by dt
 
-    timestep()
-    current_t += dt
+    for _ in range(substeps):
+        timestep()
+    current_t += 1/400
 
     update_vertices()
 
