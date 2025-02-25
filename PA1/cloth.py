@@ -9,8 +9,8 @@ ti.init(arch=ti.vulkan)
 
 # Collision Obstacle
 obstacle = Scene(Init.CLOTH_SPHERE)
-contact_eps = 1e-2
-record = False
+contact_eps = 1e-4
+record = True
 
 # cloth is square with n x n particles
 # Use smaller n values for debugging
@@ -38,6 +38,7 @@ x = ti.Vector.field(3, dtype=float, shape=(n, n))
 v = ti.Vector.field(3, dtype=float, shape=(n, n))
 
 dt = 1/600
+# dt = 1e-3
 
 # Set up initial state on the y  = 0.6 plane
 @ti.kernel
@@ -52,13 +53,17 @@ def init_cloth():
 def timestep():
     # TODO: Forces for each particle
     # Compute x and v with symplectic Euler
+    
+    # rest lengths for spring types
     structural_rest = quad_size
     shear_rest = ti.sqrt(2.0) * quad_size
     flexion_rest = 2.0 * quad_size
 
-    k_struct = 10
-    k_shear = 0.1
-    k_flex = 0.1
+    # spring constants
+    k_struct = 10.0
+    k_shear = 5.0
+    k_flex = 10.0
+    
     for i, j in ti.ndrange(n, n):
         is_pinned = False
         for pin in ti.static(pins):
@@ -66,15 +71,18 @@ def timestep():
                 is_pinned = True
         if is_pinned:
             continue
-
+        
+        # object is not pinned
         force = ti.Vector([0.0, 0.0, 0.0])
 
         # Structural springs
         for offset in ti.static([ti.Vector([1, 0]), ti.Vector([-1, 0]),
                                   ti.Vector([0, 1]), ti.Vector([0, -1])]):
+            # get neighboring indices
             ni = i + offset[0]
             nj = j + offset[1]
-            if 0 <= ni < n and 0 <= nj < n:
+            
+            if 0 <= ni < n and 0 <= nj < n: # check in bounds
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
                 force += -k_struct * (dist - structural_rest) * (diff / dist)
@@ -82,8 +90,11 @@ def timestep():
         # Shear springs
         for offset in ti.static([ti.Vector([1, 1]), ti.Vector([1, -1]),
                                   ti.Vector([-1, 1]), ti.Vector([-1, -1])]):
+            
+            # get shear indices
             ni = i + offset[0]
             nj = j + offset[1]
+            
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
@@ -92,16 +103,20 @@ def timestep():
         # Flexion springs
         for offset in ti.static([ti.Vector([2, 0]), ti.Vector([-2, 0]),
                                   ti.Vector([0, 2]), ti.Vector([0, -2])]):
+            
+            # get flexion indices
             ni = i + offset[0]
             nj = j + offset[1]
+            
             if 0 <= ni < n and 0 <= nj < n:
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
                 force += -k_flex * (dist - flexion_rest) * (diff / dist)
 
+        # add gravitational force
         force += gravity * particle_mass
 
-        # Symplectic Euler
+        # Symplectic Euler step
         a = force / particle_mass
         v[i, j] += dt * a
         x[i, j] += dt * v[i, j]
