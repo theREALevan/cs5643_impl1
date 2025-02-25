@@ -18,13 +18,13 @@ n = 128
 quad_size = 1.0 / (n-1)
 
 # particles are affected by gravity
-gravity = ti.Vector([0, -9.8, 0])
+gravity = ti.Vector([0, -9.81, 0])
 particle_mass = 1.0 / (n*n)
 
 # some particles can be pinned in place
 # pins are named by indices in the particle grid
 # TODO: Add pinned particles
-pins = []
+pins = [(0, 0), (0, n - 1)]
 
 # A spherical collision object, not used until the very last part
 ball_center = ti.Vector.field(3, dtype=float, shape=(1, ))
@@ -36,6 +36,8 @@ ball_radius = 0.3
 x = ti.Vector.field(3, dtype=float, shape=(n, n))
 # TODO: Create field for particle velocities
 v = ti.Vector.field(3, dtype=float, shape=(n, n))
+
+dt = 1/600
 
 # Set up initial state on the y  = 0.6 plane
 @ti.kernel
@@ -50,7 +52,60 @@ def init_cloth():
 def timestep():
     # TODO: Forces for each particle
     # Compute x and v with symplectic Euler
-    pass
+    structural_rest = quad_size
+    shear_rest = ti.sqrt(2.0) * quad_size
+    flexion_rest = 2.0 * quad_size
+
+    k_struct = 10
+    k_shear = 0.1
+    k_flex = 0.1
+    for i, j in ti.ndrange(n, n):
+        is_pinned = False
+        for pin in ti.static(pins):
+            if i == pin[0] and j == pin[1]:
+                is_pinned = True
+        if is_pinned:
+            continue
+
+        force = ti.Vector([0.0, 0.0, 0.0])
+
+        # Structural springs
+        for offset in ti.static([ti.Vector([1, 0]), ti.Vector([-1, 0]),
+                                  ti.Vector([0, 1]), ti.Vector([0, -1])]):
+            ni = i + offset[0]
+            nj = j + offset[1]
+            if 0 <= ni < n and 0 <= nj < n:
+                diff = x[i, j] - x[ni, nj]
+                dist = diff.norm()
+                force += -k_struct * (dist - structural_rest) * (diff / dist)
+
+        # Shear springs
+        for offset in ti.static([ti.Vector([1, 1]), ti.Vector([1, -1]),
+                                  ti.Vector([-1, 1]), ti.Vector([-1, -1])]):
+            ni = i + offset[0]
+            nj = j + offset[1]
+            if 0 <= ni < n and 0 <= nj < n:
+                diff = x[i, j] - x[ni, nj]
+                dist = diff.norm()
+                force += -k_shear * (dist - shear_rest) * (diff / dist)
+
+        # Flexion springs
+        for offset in ti.static([ti.Vector([2, 0]), ti.Vector([-2, 0]),
+                                  ti.Vector([0, 2]), ti.Vector([0, -2])]):
+            ni = i + offset[0]
+            nj = j + offset[1]
+            if 0 <= ni < n and 0 <= nj < n:
+                diff = x[i, j] - x[ni, nj]
+                dist = diff.norm()
+                force += -k_flex * (dist - flexion_rest) * (diff / dist)
+
+        force += gravity * particle_mass
+
+        # Symplectic Euler
+        a = force / particle_mass
+        v[i, j] += dt * a
+        x[i, j] += dt * v[i, j]
+
 
 ### GUI
 
@@ -110,10 +165,13 @@ init_cloth()
 initialize_mesh_indices()
 
 # Run sim
-for ii in range(300):
+for ii in range(3000):
     # TODO:
     # Call timestep() function
     # Increase current time t by dt
+
+    timestep()
+    current_t += dt
 
     update_vertices()
 
