@@ -120,6 +120,15 @@ def timestep():
         v[i, j] += dt * (force / particle_mass)
         x[i, j] += dt * v[i, j]
 
+        # Collision with sphere
+        diff_collision = x[i, j] - ball_center[0]
+        dist_collision = diff_collision.norm()
+        if dist_collision < ball_radius + contact_eps:
+            n_collision = diff_collision / dist_collision
+            # Remove inward velocity component (if any)
+            min_val = ti.min(0.0, v[i, j].dot(n_collision))
+            v[i, j] = v[i, j] - min_val * n_collision
+
 ### GUI
 
 # Data structures for drawing the mesh
@@ -196,9 +205,9 @@ for ii in range(300):
                two_sided=True)
     
     # Uncomment this part for collision
-    # scene.mesh(obstacle.verts,
-    #            indices=obstacle.tris,
-    #            color=(0.8, 0.7, 0.6))
+    scene.mesh(obstacle.verts,
+               indices=obstacle.tris,
+               color=(0.8, 0.7, 0.6))
     canvas.scene(scene)
     
     if record:
