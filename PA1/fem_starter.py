@@ -6,7 +6,7 @@ from util import *
 from pywavefront import Wavefront
 from scene import Scene, Init
 
-ti.init(arch=ti.vulkan)
+ti.init(arch=ti.vulkan, debug=True)
 
 ## Models
 # 'c': Co-rotated linear model
@@ -102,63 +102,101 @@ pins = ti.field(ti.i32, N)
 num_pins = ti.field(ti.i32, ())
 
 
-Dm = ti.Matrix.field(2, 2, ti.f32, N_triangles)  
-F = ti.Matrix.field(2, 2, ti.f32, N_triangles)  
+Dm = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
 
 @ti.kernel
 def compute_Dm():
     for i in range(N_triangles):
-        v0, v1, v2 = triangles[i]
-        X0 = x[v0]
-        Dm[i] = ti.Matrix.cols([x[v1] - X0, x[v2] - X0])
+        a = triangles[i][0]
+        b = triangles[i][1]
+        c = triangles[i][2]
+        Dm[i] = ti.Matrix.cols([x[b] - x[a], x[c] - x[a]])
 
-compute_Dm() 
+Dc = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
+@ti.func
+def compute_Dc():
+    for i in range(N_triangles):
+        a = triangles[i][0]
+        b = triangles[i][1]
+        c = triangles[i][2]
+        Dc[i] = ti.Matrix.cols([x[b] - x[a], x[c] - x[a]])
 
-# stress tensor
-P = ti.Matrix.field(2, 2, ti.f32, N_triangles) 
+F = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
+@ti.func
+def compute_F():
+    for i in range(N_triangles):
+        F[i] = Dc[i] @ Dm[i].inverse()
 
+
+mu = YoungsModulus[None] / (2*(1+PoissonsRatio[None]))
+lam = YoungsModulus[None] * PoissonsRatio[None] / ((1+PoissonsRatio[None])*(1-PoissonsRatio[None]))
+
+@ti.func 
+def neo_hookean_stress(F_i):  
+    return mu * (F_i - F_i.inverse()) + lam*tm.log(F_i.determinant())*(F_i.inverse().transpose())
+
+@ti.func
+def corotated_linear_stress(F_i):  # Accept single matrix as input
+    R,S = ti.polar_decompose(F_i)  
+    eps_c = S - ti.Matrix.identity(ti.f32, 2)
+    return R @ (2*mu*eps_c + lam*(eps_c.trace())*ti.Matrix.identity(ti.f32, 2))
+
+@ti.func
+def stvk_stress(F_i):  
+    green_E = 0.5*(F_i.transpose()@F_i - ti.Matrix.identity(ti.f32, 2))
+    return F_i@(2*mu*green_E + lam*green_E.trace()*ti.Matrix.identity(ti.f32, 2))
+
+compute_Dm()
 # TODO: Put additional fields here for storing D (etc.)
+stress = ti.Matrix.field(n=2, m=2, dtype=ti.f32, shape=N_triangles)   
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
 def timestep(currmode: int):
-    # Compute Lame parameters (updated 2D formula)
-    nu = PoissonsRatio[None]
-    mu = YoungsModulus[None] / (2 * (1 + nu))
-    lmbda = (YoungsModulus[None] * nu) / ((1 + nu) * (1 - nu))
+    # TODO: Integrate the internal elastic forces and gravity 
     
-    # Existing F calculation
-    for i in range(N_triangles):
-        v0, v1, v2 = triangles[i]
-        x0 = x[v0]
-        Ds = ti.Matrix.cols([x[v1] - x0, x[v2] - x0])
-        F[i] = Ds @ Dm[i].inverse()
-        
-        if ModelSelector[None] == 0:  # Corotated
-            R, S = ti.polar_decompose(F[i])
-            epsilon_c = S - ti.Matrix.identity(ti.f32, 2)
-            trace_epsilon = epsilon_c.trace()
-            P[i] = R @ (2*mu*epsilon_c + lmbda*trace_epsilon*ti.Matrix.identity(ti.f32, 2))
-        elif ModelSelector[None] == 1:  # StVK
-            E = 0.5*(F[i].transpose() @ F[i] - ti.Matrix.identity(ti.f32, 2))
-            P[i] = F[i] @ (2*mu*E + lmbda*E.trace()*ti.Matrix.identity(ti.f32, 2))
-        elif ModelSelector[None] == 2:  # Neo-Hookean
-            J = F[i].determinant()
-            FinvT = F[i].inverse().transpose()
-            P[i] = mu*(F[i] - FinvT) + lmbda*ti.log(J)*FinvT
+    ## Compute the internal elastic forces
+    compute_Dc()
+    compute_F()
+    for i in ti.ndrange(N_triangles):
+        if currmode == 0:
+            stress[i] = corotated_linear_stress(F[i])
+        elif currmode == 1:
+            stress[i] = stvk_stress(F[i])
+        else:
+            stress[i] = neo_hookean_stress(F[i])
             
-    compute_forces()
+    ## reset forces on each vertex
+    for i in ti.ndrange(N):
+        force[i] = ti.Vector([0.0,0.0])
+        
+    ## TODO compute internal forces on each vertex
+    for i in ti.ndrange(N_triangles):
+        a = triangles[i][0]
+        b = triangles[i][1]
+        c = triangles[i][2]
+        
+        area = 0.5*ti.abs((x[b]-x[a]).cross(x[c]-x[a]))
+        dF = Dm[i].inverse().transpose() # "shape function" derivative
+        P = stress[i]
+        
+        # Corrected force computation
+        force_a = -area * P @ dF[:, 0]  # Force on vertex a
+        force_b = -area * P @ dF[:, 1]  # Force on vertex b
+        force_c = -(force_a + force_b)  # Force on vertex c by force equilibrium
+        
+        # assert (force_a + force_b + force_c).norm() < 1e-10
+        
+        force[a] += force_a
+        force[b] += force_b
+        force[c] += force_c
+         
+ 
+    
+    # add gravity to the forces
+    for i in ti.ndrange(N):
+        force[i] += m*gravity
 
-    for i in range(N):
-        force[i] += m * gravity
-    
-    forces_np = force.to_numpy()
-    for i in range(N):
-        print(forces_np[i])
-    
-    ti.sync()  # Ensure kernel execution completes before continuing
-    
-        
-            
+
     ## Add the user-input spring force
     for i in ti.ndrange(num_pins[None]):
         v[pins[i]] = ti.Vector([0,0])
@@ -173,44 +211,13 @@ def timestep(currmode: int):
         pass
     
 
-    
-    for i in range(N):
-        v[i] += dh * force[i] / m
-        x[i] += dh * v[i]
+    ## Integrate the forces using symplectic Euler
+    for i in ti.ndrange(N):
+        if pins[i] == 0:
+            v[i] += dh*force[i]/m
+            x[i] += dh*v[i]
+            
 
-    
-    
-@ti.kernel
-def compute_forces():
-    # Reset forces
-    for i in range(N):
-        force[i] = ti.Vector([0.0, 0.0])
-
-    # Loop over all triangles to compute internal elastic forces
-    for e in range(N_triangles):
-        v0, v1, v2 = triangles[e]
-        
-        # Compute inverse of Dm
-        Dm_inv = Dm[e].inverse()
-        
-        # Compute dF/dx (gradient of F w.r.t. vertex positions)
-        dF_dx = ti.Matrix.cols([
-            [-Dm_inv[0, 0] - Dm_inv[1, 0], Dm_inv[0, 0], Dm_inv[1, 0]],
-            [-Dm_inv[0, 1] - Dm_inv[1, 1], Dm_inv[0, 1], Dm_inv[1, 1]]
-        ])
-        
-        # Compute area of the triangle
-        Ae = 0.5 * abs(Dm[e].determinant())
-        
-        # Compute force contribution from this triangle
-        P_local = P[e]  # First Piola-Kirchhoff stress tensor
-        H = -Ae * P_local @ dF_dx  # Elemental force matrix
-        
-        # Map elemental forces to vertices
-        force[v0] += ti.Vector([H[0, 0], H[1, 0]])
-        force[v1] += ti.Vector([H[0, 1], H[1, 1]])
-        force[v2] += ti.Vector([H[0, 2], H[1, 2]])
-        
 ##############################################################
 
 ## GUI
@@ -252,6 +259,7 @@ def reset_pins():
 # TODO: Run your initialization code 
 ####################################################################
 
+
 paused = True
 dm = DistanceMap(N, x)
 window = ti.ui.Window("Linear FEM", (600, 600))
@@ -259,6 +267,7 @@ canvas = window.get_canvas()
 canvas.set_background_color((1, 1, 1))
 
 while window.running:
+    # print("running", paused)
     if window.is_pressed(ti.ui.LMB):
         if not draw_force and (cur_mode_idx == 1 or cur_mode_idx == 2):
             draw_force = True
@@ -344,6 +353,7 @@ while window.running:
     if not paused:
         # TODO: run all of your simulation code here
         for i in range(substepping):
+            # print(f"Substepping {i}")
             timestep(cur_mode_idx)
             pass
     ##############################################################
