@@ -10,7 +10,7 @@ ti.init(arch=ti.vulkan)
 # Collision Obstacle
 obstacle = Scene(Init.CLOTH_SPHERE)
 contact_eps = 1e-2
-record = True
+record = False
 
 # cloth is square with n x n particles
 # Use smaller n values for debugging
@@ -27,8 +27,8 @@ substeps = int(1 / 60 // dt)
 
 # spring properties
 default_k_spring = 3e0*n
-k_damp = default_k_spring * 1e-4 / 300000 # spring damping
-k_drag = 1e0 * particle_mass / 300000 # viscous damping
+k_damp = default_k_spring * 1e-4 # spring damping
+k_drag = 1e0 * particle_mass # viscous damping
 
 k_struct = default_k_spring
 k_shear = default_k_spring
@@ -82,9 +82,10 @@ def timestep():
                 rest_length = quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
+                relative_vel = v[i, j] - v[ni, nj]
                 if dist > 1e-6:
                     spring_force = k_struct * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * k_struct * (v[i, j].dot(diff / dist)) * (diff / dist)
+                    damping_force = -k_damp * relative_vel.dot(diff / dist) * (diff / dist)
                     force += spring_force + damping_force
         
         # Shear springs
@@ -95,9 +96,10 @@ def timestep():
                 rest_length = tm.sqrt(2.0) * quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
+                relative_vel = v[i, j] - v[ni, nj]
                 if dist > 1e-6:
                     spring_force = k_shear * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * k_shear * (v[i, j].dot(diff / dist)) * (diff / dist)
+                    damping_force = -k_damp * (relative_vel.dot(diff / dist)) * (diff / dist)
                     force += spring_force + damping_force
         
         # Flexion springs
@@ -108,13 +110,14 @@ def timestep():
                 rest_length = 2 * quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
+                relative_vel = v[i, j] - v[ni, nj]
                 if dist > 1e-6:
                     spring_force = k_flex * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * k_flex * (v[i, j].dot(diff / dist)) * (diff / dist)
+                    damping_force = -k_damp * (relative_vel.dot(diff / dist)) * (diff / dist)
                     force += spring_force + damping_force
         
         # Mass proportional damping
-        force += -k_drag * particle_mass * v[i, j]
+        force += -k_drag * v[i, j]
         
         # Symplectic Euler integration
         v[i, j] += dt * (force / particle_mass)
