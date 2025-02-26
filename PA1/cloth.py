@@ -8,7 +8,7 @@ from scene import Scene, Init
 ti.init(arch=ti.vulkan)
 
 # Collision Obstacle
-obstacle = Scene(Init.CLOTH_SPHERE)
+obstacle = Scene(Init.CLOTH_TABLE)
 contact_eps = 1e-2
 record = False
 
@@ -38,6 +38,7 @@ k_flex = default_k_spring
 # pins are named by indices in the particle grid
 # Use the variable pins to access pinned particles
 pins = [(0, 0), (0, n-1)]
+pins = []
 
 # A spherical collision object, not used until the very last part
 ball_center = ti.Vector.field(3, dtype=float, shape=(1, ))
@@ -64,13 +65,6 @@ def timestep():
     # TODO: Forces for each particle
     # Compute x and v with symplectic Euler
     for i, j in ti.ndrange(n, n):
-        pinned = False
-        for p in ti.static(pins):
-            if i == p[0] and j == p[1]:
-                pinned = True
-        if pinned:
-            v[i, j] = ti.Vector([0.0, 0.0, 0.0])
-            continue
 
         force = particle_mass * gravity
         
@@ -82,10 +76,10 @@ def timestep():
                 rest_length = quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                relative_vel = v[i, j] - v[ni, nj]
+                relative_vel = v[ni, nj] - v[i, j]
                 if dist > 1e-6:
                     spring_force = k_struct * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * relative_vel.dot(diff / dist) * (diff / dist)
+                    damping_force = -k_damp * (- diff / dist) * (-relative_vel.dot(- diff / dist))
                     force += spring_force + damping_force
         
         # Shear springs
@@ -96,10 +90,10 @@ def timestep():
                 rest_length = tm.sqrt(2.0) * quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                relative_vel = v[i, j] - v[ni, nj]
+                relative_vel = v[ni, nj] - v[i, j]
                 if dist > 1e-6:
                     spring_force = k_shear * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * (relative_vel.dot(diff / dist)) * (diff / dist)
+                    damping_force = -k_damp * (- diff / dist) * (-relative_vel.dot(- diff / dist))
                     force += spring_force + damping_force
         
         # Flexion springs
@@ -110,27 +104,50 @@ def timestep():
                 rest_length = 2 * quad_size
                 diff = x[i, j] - x[ni, nj]
                 dist = diff.norm()
-                relative_vel = v[i, j] - v[ni, nj]
+                relative_vel = v[ni, nj] - v[i, j]
                 if dist > 1e-6:
                     spring_force = k_flex * (rest_length - dist) * (diff / dist)
-                    damping_force = -k_damp * (relative_vel.dot(diff / dist)) * (diff / dist)
+                    damping_force = -k_damp * (- diff / dist) * (-relative_vel.dot(- diff / dist))
                     force += spring_force + damping_force
         
         # Mass proportional damping
         force += -k_drag * v[i, j]
         
         # Symplectic Euler integration
-        v[i, j] += dt * (force / particle_mass)
+        pinned = False
+        for p in ti.static(pins):
+            if i == p[0] and j == p[1]:
+                pinned = True
+        if pinned:
+            v[i, j] = ti.Vector([0.0, 0.0, 0.0])
+        else:
+            v[i, j] += dt * (force / particle_mass)
         x[i, j] += dt * v[i, j]
 
         # Collision with sphere
-        diff_collision = x[i, j] - ball_center[0]
-        dist_collision = diff_collision.norm()
-        if dist_collision < ball_radius + contact_eps:
-            n_collision = diff_collision / dist_collision
-            # Remove inward velocity component (if any)
-            min_val = ti.min(0.0, v[i, j].dot(n_collision))
-            v[i, j] = v[i, j] - min_val * n_collision
+        # diff_collision = x[i, j] - ball_center[0]
+        # dist_collision = diff_collision.norm()
+        # if dist_collision < ball_radius + contact_eps:
+        #     n_collision = diff_collision / dist_collision
+        #     # Remove inward velocity component (if any)
+        #     min_val = ti.min(0.0, v[i, j].dot(n_collision))
+        #     v[i, j] = v[i, j] - min_val * n_collision
+
+        # Collision with table (disk shape)
+        table_center = obstacle.tabletop_center[0]
+        table_radius = obstacle.tabletop_radius
+        table_height = obstacle.tabletop_upside_center[0].y 
+        
+        dx = x[i, j][0] - table_center[0] 
+        dz = x[i, j][2] - table_center[2]
+        horizontal_dist = tm.sqrt(dx*dx + dz*dz)
+        
+        if horizontal_dist <= table_radius and x[i, j][1] < table_height + contact_eps:
+            # Correct the position
+            penetration = (table_height + contact_eps) - x[i, j][1]
+            x[i, j][1] += 0.0005 * penetration  
+            if v[i, j][1] < 0:
+                v[i, j][1] = 0.0
 
 ### GUI
 
