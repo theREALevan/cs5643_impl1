@@ -6,7 +6,7 @@ from util import *
 from pywavefront import Wavefront
 from scene import Scene, Init
 
-ti.init(arch=ti.vulkan, debug=True)
+ti.init(arch=ti.vulkan)
 
 ## Models
 # 'c': Co-rotated linear model
@@ -101,101 +101,11 @@ draw_force = False
 pins = ti.field(ti.i32, N)
 num_pins = ti.field(ti.i32, ())
 
-
-Dm = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
-
-@ti.kernel
-def compute_Dm():
-    for i in range(N_triangles):
-        a = triangles[i][0]
-        b = triangles[i][1]
-        c = triangles[i][2]
-        Dm[i] = ti.Matrix.cols([x[b] - x[a], x[c] - x[a]])
-
-Dc = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
-@ti.func
-def compute_Dc():
-    for i in range(N_triangles):
-        a = triangles[i][0]
-        b = triangles[i][1]
-        c = triangles[i][2]
-        Dc[i] = ti.Matrix.cols([x[b] - x[a], x[c] - x[a]])
-
-F = ti.Matrix.field(2, 2, shape=N_triangles, dtype=ti.f32)
-@ti.func
-def compute_F():
-    for i in range(N_triangles):
-        F[i] = Dc[i] @ Dm[i].inverse()
-
-
-mu = YoungsModulus[None] / (2*(1+PoissonsRatio[None]))
-lam = YoungsModulus[None] * PoissonsRatio[None] / ((1+PoissonsRatio[None])*(1-PoissonsRatio[None]))
-
-@ti.func 
-def neo_hookean_stress(F_i):  
-    return mu * (F_i - F_i.inverse()) + lam*tm.log(F_i.determinant())*(F_i.inverse().transpose())
-
-@ti.func
-def corotated_linear_stress(F_i):  # Accept single matrix as input
-    R,S = ti.polar_decompose(F_i)  
-    eps_c = S - ti.Matrix.identity(ti.f32, 2)
-    return R @ (2*mu*eps_c + lam*(eps_c.trace())*ti.Matrix.identity(ti.f32, 2))
-
-@ti.func
-def stvk_stress(F_i):  
-    green_E = 0.5*(F_i.transpose()@F_i - ti.Matrix.identity(ti.f32, 2))
-    return F_i@(2*mu*green_E + lam*green_E.trace()*ti.Matrix.identity(ti.f32, 2))
-
-compute_Dm()
 # TODO: Put additional fields here for storing D (etc.)
-stress = ti.Matrix.field(n=2, m=2, dtype=ti.f32, shape=N_triangles)   
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
 def timestep(currmode: int):
     # TODO: Integrate the internal elastic forces and gravity 
-    
-    ## Compute the internal elastic forces
-    compute_Dc()
-    compute_F()
-    for i in ti.ndrange(N_triangles):
-        if currmode == 0:
-            stress[i] = corotated_linear_stress(F[i])
-        elif currmode == 1:
-            stress[i] = stvk_stress(F[i])
-        else:
-            stress[i] = neo_hookean_stress(F[i])
-            
-    ## reset forces on each vertex
-    for i in ti.ndrange(N):
-        force[i] = ti.Vector([0.0,0.0])
-        
-    ## TODO compute internal forces on each vertex
-    for i in ti.ndrange(N_triangles):
-        a = triangles[i][0]
-        b = triangles[i][1]
-        c = triangles[i][2]
-        
-        area = 0.5*ti.abs((x[b]-x[a]).cross(x[c]-x[a]))
-        dF = Dm[i].inverse().transpose() # "shape function" derivative
-        P = stress[i]
-        
-        # Corrected force computation
-        force_a = -area * P @ dF[:, 0]  # Force on vertex a
-        force_b = -area * P @ dF[:, 1]  # Force on vertex b
-        force_c = -(force_a + force_b)  # Force on vertex c by force equilibrium
-        
-        # assert (force_a + force_b + force_c).norm() < 1e-10
-        
-        force[a] += force_a
-        force[b] += force_b
-        force[c] += force_c
-         
- 
-    
-    # add gravity to the forces
-    for i in ti.ndrange(N):
-        force[i] += m*gravity
-
 
     ## Add the user-input spring force
     for i in ti.ndrange(num_pins[None]):
@@ -209,14 +119,6 @@ def timestep(currmode: int):
     if currmode == 2:
         # TODO: Resolve Collision
         pass
-    
-
-    ## Integrate the forces using symplectic Euler
-    for i in ti.ndrange(N):
-        if pins[i] == 0:
-            v[i] += dh*force[i]/m
-            x[i] += dh*v[i]
-            
 
 ##############################################################
 
@@ -259,7 +161,6 @@ def reset_pins():
 # TODO: Run your initialization code 
 ####################################################################
 
-
 paused = True
 dm = DistanceMap(N, x)
 window = ti.ui.Window("Linear FEM", (600, 600))
@@ -267,7 +168,6 @@ canvas = window.get_canvas()
 canvas.set_background_color((1, 1, 1))
 
 while window.running:
-    # print("running", paused)
     if window.is_pressed(ti.ui.LMB):
         if not draw_force and (cur_mode_idx == 1 or cur_mode_idx == 2):
             draw_force = True
@@ -353,7 +253,6 @@ while window.running:
     if not paused:
         # TODO: run all of your simulation code here
         for i in range(substepping):
-            # print(f"Substepping {i}")
             timestep(cur_mode_idx)
             pass
     ##############################################################
