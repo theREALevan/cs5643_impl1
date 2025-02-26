@@ -141,13 +141,29 @@ def timestep():
         dx = x[i, j][0] - table_center[0] 
         dz = x[i, j][2] - table_center[2]
         horizontal_dist = tm.sqrt(dx*dx + dz*dz)
-        
-        if horizontal_dist <= table_radius and x[i, j][1] < table_height + contact_eps:
-            # Correct the position
-            penetration = (table_height + contact_eps) - x[i, j][1]
-            x[i, j][1] += 0.0005 * penetration  
-            if v[i, j][1] < 0:
-                v[i, j][1] = 0.0
+        n_side = ti.Vector([0.0, 0.0, 0.0])
+
+        if x[i, j][1] < table_height + contact_eps:
+            # Vertical collision
+            if horizontal_dist < table_radius - contact_eps:
+                penetration = (table_height + contact_eps) - x[i, j][1]
+                x[i, j][1] += 0.0005 * penetration  # soft vertical correction
+                if v[i, j][1] < 0:
+                    v[i, j][1] = 0.0
+            # Side collision
+            elif horizontal_dist < table_radius + contact_eps:
+                penetration_side = (table_radius + contact_eps) - horizontal_dist
+                if horizontal_dist > 1e-6:
+                    n_side = ti.Vector([dx, 0.0, dz]) / horizontal_dist
+                else:
+                    n_side = ti.Vector([1.0, 0.0, 0.0])
+                x[i, j][0] += 0.0005 * penetration_side * n_side[0]
+                x[i, j][2] += 0.0005 * penetration_side * n_side[2]
+                # Cancel inward horizontal velocity (We don't really want this)
+                horizontal_velocity = ti.Vector([v[i, j][0], 0.0, v[i, j][2]])
+                if horizontal_velocity.dot(n_side) < 0:
+                    v[i, j][0] = 0.0
+                    v[i, j][2] = 0.0
 
 ### GUI
 
