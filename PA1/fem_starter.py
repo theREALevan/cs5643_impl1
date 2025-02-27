@@ -111,7 +111,6 @@ num_pins = ti.field(ti.i32, ())
 
 # TODO: Put additional fields here for storing D (etc.)
 D0 = ti.Matrix.field(2, 2, dtype=ti.f32, shape=N_triangles)
-# Field for storing the rest area for each triangle
 area0 = ti.field(ti.f32, shape=N_triangles)
 
 @ti.func
@@ -137,7 +136,7 @@ def compute_F(t: ti.i32) -> ti.Matrix:
     i0 = triangles[t][0]
     i1 = triangles[t][1]
     i2 = triangles[t][2]
-    # Compute current D from the deformed positions
+    # Compute current D
     D = compute_D(x[i0], x[i1], x[i2])
     # Compute and return the deformation gradient F
     return D @ D0[t].inverse()
@@ -152,23 +151,28 @@ def polar_decomposition(F):
 @ti.func
 def compute_P(F):
     I2 = ti.Matrix([[1.0, 0.0], [0.0, 1.0]])
+    # Initialize the first Piola-Kirchhoff stress tensor
+    P_ret = ti.Matrix.zero(ti.f32, 2, 2)
     if ModelSelector[None] == 0:
         # Corotated linear model
         R, S = polar_decomposition(F)
         E_c = S - I2
-        return R @ (2.0 * Lame_mu[None] * E_c + Lame_lambda[None] * E_c.trace() * I2)
+        P_ret = R @ (2.0 * Lame_mu[None] * E_c + Lame_lambda[None] * E_c.trace() * I2)
     elif ModelSelector[None] == 1:
         # St. Venant-Kirchhoff model
         E_green = 0.5 * (F.transpose() @ F - I2)
-        return F @ (2.0 * Lame_mu[None] * E_green + Lame_lambda[None] * E_green.trace() * I2)
+        P_ret = F @ (2.0 * Lame_mu[None] * E_green + Lame_lambda[None] * E_green.trace() * I2)
     else:
-        # Neo-Hookean model:
+        # Neo-Hookean model
         detF = F.determinant()
         invT = F.inverse().transpose()
-        return Lame_mu[None] * (F - invT) + Lame_lambda[None] * ti.log(detF) * invT
+        P_ret = Lame_mu[None] * (F - invT) + Lame_lambda[None] * ti.log(detF) * invT
+    return P_ret
 
+# TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
-def compute_forces():
+def timestep(currmode: int):
+    # TODO: Integrate the internal elastic forces and gravity 
     for i in range(N):
         force[i] = ti.Vector([0.0, 0.0])
     for t in range(N_triangles):
@@ -181,19 +185,33 @@ def compute_forces():
         P = compute_P(F)
         # Compute the inverse-transpose
         invT = D0[t].inverse().transpose()
-        # Get the rest area
+        # Get the rest area A_e
         A_e = area0[t]
-        # Compute the force contribution matrix
+        # Compute force contribution matrix
         H = -A_e * (P @ invT)
-        
-        force[i1] += H.col(0)
-        force[i2] += H.col(1)
-        force[i0] += -(H.col(0) + H.col(1))
-
-# TODO: Implement the initialization and timestepping kernel for the deformable object
-@ti.kernel
-def timestep(currmode: int):
-    # TODO: Integrate the internal elastic forces and gravity 
+        col0 = ti.Vector([H[0, 0], H[1, 0]])
+        col1 = ti.Vector([H[0, 1], H[1, 1]])
+        force[i1] += col0
+        force[i2] += col1
+        force[i0] += -(col0 + col1)
+    
+    for i in range(N):
+        f_total = force[i]
+        v[i] += dh * (f_total / m)
+        x[i] += dh * v[i]
+        # Boundary projection
+        if x[i].x < 0.0:
+            x[i].x = 0.0
+            v[i].x = 0.0
+        if x[i].x > 1.0:
+            x[i].x = 1.0
+            v[i].x = 0.0
+        if x[i].y < 0.0:
+            x[i].y = 0.0
+            v[i].y = 0.0
+        if x[i].y > 1.0:
+            x[i].y = 1.0
+            v[i].y = 0.0
 
     ## Add the user-input spring force
     for i in ti.ndrange(num_pins[None]):
@@ -237,6 +255,9 @@ def reset_state():
     for i in range(N):
         v[i] = ti.Vector([0,0])
     reset_user_drag()
+    initialize_D0()
+    initialize_area0()
+    update_lame_parameters()
 
 @ti.kernel
 def reset_pins():
@@ -247,7 +268,9 @@ def reset_pins():
 
 ####################################################################
 # TODO: Run your initialization code 
-####################################################################
+####################################################################\
+
+reset_state()
 
 paused = True
 dm = DistanceMap(N, x)
