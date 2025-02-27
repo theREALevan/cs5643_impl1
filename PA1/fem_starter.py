@@ -29,7 +29,15 @@ kspring = 100 # This is the stiffness of the user-input spring force!
 ##############################################################
 # TODO: Put additional parameters here
 # e.g. Lame parameters 
+Lame_mu = ti.field(ti.f32, ())
+Lame_lambda = ti.field(ti.f32, ())
 ##############################################################
+
+@ti.kernel
+def update_lame_parameters():
+    Lame_mu[None] = YoungsModulus[None] / (2.0 * (1.0 + PoissonsRatio[None]))
+    Lame_lambda[None] = YoungsModulus[None] * PoissonsRatio[None] / ((1.0 + PoissonsRatio[None]) * (1.0 - PoissonsRatio[None]))
+
 
 ## Load geometry of the simulation scenes
 obj = Wavefront('models/woody-halfres.obj', collect_faces=True)
@@ -126,6 +134,32 @@ def compute_F(t: ti.i32) -> ti.Matrix:
     D = compute_D(x[i0], x[i1], x[i2])
     # Compute and return the deformation gradient F
     return D @ D0[t].inverse()
+    
+@ti.func
+def polar_decomposition(F):
+    u, s, v = ti.svd(F)
+    R = u @ v.transpose()
+    S = R.transpose() @ F
+    return R, S
+
+@ti.func
+def compute_P(F):
+    I2 = ti.Matrix([[1.0, 0.0], [0.0, 1.0]])
+    if ModelSelector[None] == 0:
+        # Corotated linear model
+        R, S = polar_decomposition(F)
+        E_c = S - I2
+        return R @ (2.0 * Lame_mu[None] * E_c + Lame_lambda[None] * E_c.trace() * I2)
+    elif ModelSelector[None] == 1:
+        # St. Venant-Kirchhoff model
+        E_green = 0.5 * (F.transpose() @ F - I2)
+        return F @ (2.0 * Lame_mu[None] * E_green + Lame_lambda[None] * E_green.trace() * I2)
+    else:
+        # Neo-Hookean model:
+        detF = F.determinant()
+        invT = F.inverse().transpose()
+        return Lame_mu[None] * (F - invT) + Lame_lambda[None] * ti.log(detF) * invT
+
 
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
