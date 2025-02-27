@@ -133,38 +133,55 @@ def timestep():
         #     min_val = ti.min(0.0, v[i, j].dot(n_collision))
         #     v[i, j] = v[i, j] - min_val * n_collision
 
-        # Collision with table (disk shape)
-        table_center = obstacle.tabletop_center[0]
-        table_radius = obstacle.tabletop_radius
-        table_height = obstacle.tabletop_upside_center[0].y 
-        
-        dx = x[i, j][0] - table_center[0] 
-        dz = x[i, j][2] - table_center[2]
-        horizontal_dist = tm.sqrt(dx*dx + dz*dz)
-        n_side = ti.Vector([0.0, 0.0, 0.0])
+        # tabletop geometry
+        tabletop_center = ti.Vector([0.5, 0.1, 0.5])
+        tabletop_radius = 0.4
+        tabletop_height = 0.04
+        tabletop_upside_center = ti.Vector([0.5, 0.1 + 0.5 * tabletop_height, 0.5])
+        tabletop_downside_center = ti.Vector([0.5, 0.1 - 0.5 * tabletop_height, 0.5])
 
-        if x[i, j][1] < table_height + contact_eps:
-            # Vertical collision
-            if horizontal_dist < table_radius - contact_eps:
-                penetration = (table_height + contact_eps) - x[i, j][1]
-                x[i, j][1] += 0.0005 * penetration  # soft vertical correction
-                if v[i, j][1] < 0:
-                    v[i, j][1] = 0.0
-            # Side collision
-            elif horizontal_dist < table_radius + contact_eps:
-                penetration_side = (table_radius + contact_eps) - horizontal_dist
-                if horizontal_dist > 1e-6:
-                    n_side = ti.Vector([dx, 0.0, dz]) / horizontal_dist
-                else:
-                    n_side = ti.Vector([1.0, 0.0, 0.0])
-                x[i, j][0] += 0.0005 * penetration_side * n_side[0]
-                x[i, j][2] += 0.0005 * penetration_side * n_side[2]
-                # Cancel inward horizontal velocity (We don't really want this)
-                horizontal_velocity = ti.Vector([v[i, j][0], 0.0, v[i, j][2]])
-                if horizontal_velocity.dot(n_side) < 0:
-                    v[i, j][0] = 0.0
-                    v[i, j][2] = 0.0
+        dx = x[i, j][0] - tabletop_center[0]
+        dz = x[i, j][2] - tabletop_center[2]
+        horizontal_dist = tm.sqrt(dx * dx + dz * dz)
+        normal = ti.Vector([0.0, 0.0, 0.0])
 
+        # 1) Collision with tabletop top face
+        if (x[i, j].y < tabletop_upside_center[1] + contact_eps 
+            and horizontal_dist < tabletop_radius):
+            normal = ti.Vector([0.0, 1.0, 0.0])
+            penetration = (tabletop_upside_center[1] + contact_eps) - x[i, j].y
+            # Remove only inward velocity
+            v_inward = min(0.0, v[i, j].dot(normal))
+            v[i, j] = v[i, j] - v_inward * normal
+            x[i, j].y += 0.000005 * penetration  # push it out of the table top
+
+        # 2) Collision with tabletop side
+        elif (x[i, j].y <= tabletop_upside_center[1] + contact_eps and
+            x[i, j].y >= tabletop_downside_center[1] - contact_eps and
+            horizontal_dist < tabletop_radius + contact_eps):
+            penetration_side = (tabletop_radius + contact_eps) - horizontal_dist
+            if horizontal_dist > 1e-6:
+                normal = ti.Vector([dx, 0.0, dz]) / horizontal_dist
+            else:
+                normal = ti.Vector([1.0, 0.0, 0.0])
+            x[i, j][0] += 0.0005 * penetration_side * normal[0]
+            x[i, j][2] += 0.0005 * penetration_side * normal[2]
+            # Cancel inward horizontal velocity
+            horizontal_velocity = ti.Vector([v[i, j][0], 0.0, v[i, j][2]])
+            if horizontal_velocity.dot(normal) < 0:
+                v[i, j][0] = 0.0
+                v[i, j][2] = 0.0
+
+        # 3) Collision with tabletop bottom face
+        if (x[i,j].y < tabletop_downside_center[1] + contact_eps and
+            x[i, j].y > tabletop_downside_center[1] - contact_eps and 
+            horizontal_dist < tabletop_radius):
+            normal = ti.Vector([0.0, -1.0, 0.0])
+            penetration = x[i, j].y - (tabletop_downside_center[1] - contact_eps)
+            # Remove only inward velocity
+            v_inward = min(0.0, v[i, j].dot(normal))
+            v[i, j] = v[i, j] - v_inward * normal
+            x[i, j].y -= 0.00005 * penetration
 ### GUI
 
 # Data structures for drawing the mesh
