@@ -111,6 +111,8 @@ num_pins = ti.field(ti.i32, ())
 
 # TODO: Put additional fields here for storing D (etc.)
 D0 = ti.Matrix.field(2, 2, dtype=ti.f32, shape=N_triangles)
+# Field for storing the rest area for each triangle
+area0 = ti.field(ti.f32, shape=N_triangles)
 
 @ti.func
 def compute_D(p0, p1, p2):
@@ -124,6 +126,11 @@ def initialize_D0():
         i2 = triangles[t][2]
         # Compute D₀ using the initial positions stored in x (rest configuration)
         D0[t] = compute_D(x[i0], x[i1], x[i2])
+
+@ti.kernel
+def initialize_area0():
+    for t in range(N_triangles):
+        area0[t] = 0.5 * ti.abs(D0[t].determinant())
 
 @ti.func
 def compute_F(t: ti.i32) -> ti.Matrix:
@@ -160,6 +167,28 @@ def compute_P(F):
         invT = F.inverse().transpose()
         return Lame_mu[None] * (F - invT) + Lame_lambda[None] * ti.log(detF) * invT
 
+@ti.kernel
+def compute_forces():
+    for i in range(N):
+        force[i] = ti.Vector([0.0, 0.0])
+    for t in range(N_triangles):
+        i0 = triangles[t][0]
+        i1 = triangles[t][1]
+        i2 = triangles[t][2]
+        # Compute the current deformation gradient
+        F = compute_F(t)
+        # Compute the first Piola-Kirchhoff stress tensor
+        P = compute_P(F)
+        # Compute the inverse-transpose
+        invT = D0[t].inverse().transpose()
+        # Get the rest area
+        A_e = area0[t]
+        # Compute the force contribution matrix
+        H = -A_e * (P @ invT)
+        
+        force[i1] += H.col(0)
+        force[i2] += H.col(1)
+        force[i0] += -(H.col(0) + H.col(1))
 
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
