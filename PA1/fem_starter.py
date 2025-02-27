@@ -196,7 +196,7 @@ def timestep(currmode: int):
         force[i0] += -(col0 + col1)
     
     for i in range(N):
-        f_total = force[i]
+        f_total = force[i] + (m * gravity / 50 if currmode == 2 else ti.Vector([0.0, 0.0]))
         v[i] += dh * (f_total / m)
         x[i] += dh * v[i]
         # Boundary projection
@@ -224,7 +224,20 @@ def timestep(currmode: int):
 
     if currmode == 2:
         # TODO: Resolve Collision
-        pass
+        for i in range(N):
+            for j in range(house.nboundary):
+                bp = house.boundaries.p[j]    # boundary point
+                bn = house.boundaries.n[j]    # boundary normal
+                eps = house.boundaries.eps[j]
+                # Compute signed distance from vertex to boundary
+                d = (x[i] - bp).dot(bn)
+                if d < eps:
+                    # Vertex penetrates
+                    correction = eps - d
+                    # Project the vertex out along the normal
+                    x[i] += correction * bn
+                    # Remove the normal component of the velocity
+                    v[i] -= (v[i].dot(bn)) * bn
 
 ##############################################################
 
