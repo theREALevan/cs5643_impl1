@@ -27,6 +27,13 @@ PoissonsRatio[None] = 0.5
 ##############################################################
 # TODO: Put additional parameters here
 # e.g. Lame parameters 
+Lame_mu = ti.field(ti.f32, ())
+Lame_lambda = ti.field(ti.f32, ())
+
+@ti.kernel
+def update_lame_parameters():
+    Lame_mu[None] = YoungsModulus[None] / (2.0 * (1.0 + PoissonsRatio[None]))
+    Lame_lambda[None] = YoungsModulus[None] * PoissonsRatio[None] / ((1.0 + PoissonsRatio[None]) * (1.0 - PoissonsRatio[None]))
 ##############################################################
 
 ## Load geometry of the test scenes
@@ -106,21 +113,106 @@ for i in range(int(0.5*num_pins[None])):
     pins[2*i] = 40*i
     pins[2*i+1] = 40*i+39
 
+is_pinned = ti.field(ti.i32, shape=N)
+
+@ti.kernel
+def initialize_pinned_mask():
+    for i in range(N):
+        is_pinned[i] = 0
+    for j in range(num_pins[None]):
+        is_pinned[pins[j]] = 1
+
+
 # TODO: Put additional fields here for storing D (etc.)
+D0 = ti.Matrix.field(2, 2, ti.f32, shape=N_triangles)
+area0 = ti.field(ti.f32, shape=N_triangles)
+
+@ti.func
+def compute_D(p0, p1, p2):
+    return ti.Matrix.cols([p1 - p0, p2 - p0])
+
+@ti.kernel
+def initialize_D0():
+    # Compute D0 from x_rest
+    for t in range(N_triangles):
+        i0 = triangles[t][0]
+        i1 = triangles[t][1]
+        i2 = triangles[t][2]
+        D0[t] = compute_D(x_rest[i0], x_rest[i1], x_rest[i2])
+
+@ti.kernel
+def initialize_area0():
+    for t in range(N_triangles):
+        area0[t] = 0.5 * ti.abs(D0[t].determinant())
+
+@ti.func
+def compute_F(t: ti.i32) -> ti.Matrix:
+    i0 = triangles[t][0]
+    i1 = triangles[t][1]
+    i2 = triangles[t][2]
+    # Compute current D from deformed shape x
+    D = compute_D(x[i0], x[i1], x[i2])
+    return D @ D0[t].inverse()
+
+@ti.func
+def polar_decomposition(F):
+    u, s, v = ti.svd(F)
+    R = u @ v.transpose()
+    S = R.transpose() @ F
+    return R, S
+
+@ti.func
+def compute_P(F):
+    I2 = ti.Matrix([[1.0,0.0],[0.0,1.0]])
+    P_ret = ti.Matrix.zero(ti.f32, 2,2)
+    if ModelSelector[None] == 0:
+        R, S = polar_decomposition(F)
+        E_c = S - I2
+        P_ret = R @ (2.0 * Lame_mu[None] * E_c + Lame_lambda[None] * E_c.trace() * I2)
+    elif ModelSelector[None] == 1:
+        E_green = 0.5*(F.transpose()@F - I2)
+        P_ret = F @ (2.0 * Lame_mu[None] * E_green + Lame_lambda[None] * E_green.trace() * I2)
+    else:
+        detF = F.determinant()
+        invT = F.inverse().transpose()
+        P_ret = Lame_mu[None]*(F - invT) + Lame_lambda[None]*ti.log(detF)*invT
+    return P_ret
+
+forces = ti.Vector.field(2, ti.f32, shape=N)
+
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
 def timestep():
-    # TODO: Sympletic integration of the internal elastic forces 
-
-    for i in ti.ndrange(num_pins[None]):
-        v[pins[i]] = ti.Vector([0,0])
-
-    # viscous damping
-    for i in v:
-        if damping_toggle[None]:
-            v[i] -= v[i] * k_drag / m * dh 
+    # Clear forces for all vertices
+    for i in range(N):
+        forces[i] = ti.Vector([0.0, 0.0])
     
-    # TODO: Sympletic integration of the internal elastic forces
+    # Compute forces on all triangles
+    for t in range(N_triangles):
+        i0 = triangles[t][0]
+        i1 = triangles[t][1]
+        i2 = triangles[t][2]
+        F = compute_F(t)
+        P = compute_P(F)
+        invT = D0[t].inverse().transpose()
+        A_e = area0[t]
+        H = -A_e * (P @ invT)
+        col0 = ti.Vector([H[0,0], H[1,0]])
+        col1 = ti.Vector([H[0,1], H[1,1]])
+        forces[i1] += col0
+        forces[i2] += col1
+        forces[i0] += -(col0 + col1)
+    
+    # Update velocity and position only for non-pinned vertices
+    for i in range(N):
+        # Skip update if vertex is pinned
+        if is_pinned[i] == 1:
+            continue
+
+        if damping_toggle[None]:
+            v[i] -= v[i] * k_drag / m * dh
+        v[i] += dh * (forces[i] / m)
+        x[i] += dh * v[i]
 
 ##############################################################
 
@@ -130,6 +222,10 @@ is_stretch[None] = 1
 def reset_state():
     ModelSelector[None] = 'cvn'.find(model)
     initialize()
+    update_lame_parameters()
+    initialize_D0()
+    initialize_area0()
+    initialize_pinned_mask()
 
 @ti.kernel
 def initialize():
@@ -149,6 +245,8 @@ initialize()
 ####################################################################
 # TODO: Run your initialization code 
 ####################################################################
+
+reset_state()
 
 paused = False
 window = ti.ui.Window("Linear FEM", (600, 600))
