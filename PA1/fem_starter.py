@@ -33,6 +33,9 @@ Lame_mu = ti.field(ti.f32, ())
 Lame_lambda = ti.field(ti.f32, ())
 ##############################################################
 
+# Whether to show strain
+show_strain = False
+
 @ti.kernel
 def update_lame_parameters():
     Lame_mu[None] = YoungsModulus[None] / (2.0 * (1.0 + PoissonsRatio[None]))
@@ -177,7 +180,7 @@ def timestep(currmode: int):
     for i in range(N):
         force[i] = ti.Vector([0.0, 0.0])
     for i in range(N):
-        vertex_strain[i] = 0.0  # [ADDED]
+        vertex_strain[i] = 0.0 
     
     for t in range(N_triangles):
         i0 = triangles[t][0]
@@ -393,26 +396,28 @@ while window.running:
             pass
     ##############################################################
 
-    # Update the distance map
-    max_val = 0.0
-    for i in range(N):
-        if vertex_strain[i] > max_val:
-            max_val = vertex_strain[i]
-    # Avoid division by zero
-    if max_val < 1e-8:
-        max_val = 1e-8
-    for i in range(N):
-        c = vertex_strain[i] / max_val
-        per_vertex_color[i] = ti.Vector([c, 0.0, 1.0 - c])  # (blue-to-red)
-    
-    # Override pinned vertices to show green
-    for i in range(num_pins[None]):
-        per_vertex_color[pins[i]] = pin_color
+    if show_strain:
+        # Update the distance map
+        max_val = 0.0
+        for i in range(N):
+            if vertex_strain[i] > max_val:
+                max_val = vertex_strain[i]
+        # Avoid division by zero
+        if max_val < 1e-8:
+            max_val = 1e-8
+        for i in range(N):
+            c = vertex_strain[i] / max_val
+            per_vertex_color[i] = ti.Vector([c, 0.0, 1.0 - c])  # (blue-to-red)
+        
+        # Override pinned vertices to show green
+        for i in range(num_pins[None]):
+            per_vertex_color[pins[i]] = pin_color
 
     # Draw wireframe of mesh
     canvas.lines(vertices=x, indices=edges, width=0.002, color=(0,0,0))
 
-    canvas.triangles(vertices=x, indices=triangles, per_vertex_color=per_vertex_color)
+    if show_strain:
+        canvas.triangles(vertices=x, indices=triangles, per_vertex_color=per_vertex_color)
 
     canvas.circles(x, per_vertex_color=per_vertex_color, radius=0.005)
 
