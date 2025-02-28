@@ -45,6 +45,12 @@ ball_center = ti.Vector.field(3, dtype=float, shape=(1, ))
 ball_center[0] = [0.5, 0, 0.5]
 ball_radius = 0.3
 
+wind_time = ti.field(dtype=ti.f32, shape=())
+wind_time[None] = 0.0
+
+wind_vec = ti.Vector.field(3, dtype=ti.f32, shape=())
+wind_vec[None] = ti.Vector([0.0, 0.0, 0.0])
+
 ### System state
 
 x = ti.Vector.field(3, dtype=float, shape=(n, n))
@@ -67,6 +73,10 @@ def timestep():
     for i, j in ti.ndrange(n, n):
 
         force = particle_mass * gravity
+        
+        wind_strength = 0.0005
+        wind = wind_strength * wind_vec[None]
+        force += wind
         
         # Structural springs
         for offset in ti.static([(1, 0), (-1, 0), (0, 1), (0, -1)]):
@@ -176,11 +186,11 @@ def timestep():
             inward_component = v[i, j].dot(n_collision)
             if inward_component < 0.0:
                 v[i, j] = v[i, j] - inward_component * n_collision
-                
+
             penetration_depth = contact_eps - dist_collision
             x[i, j] = x[i, j] + penetration_depth * n_collision
 
-            friction_coeff = 0.025 # Friction coefficient
+            friction_coeff = 3 # Friction coefficient
             vt = v[i, j] - (v[i, j].dot(n_collision)) * n_collision
             vt_mag = vt.norm()
             if vt_mag > 1e-6:
@@ -247,6 +257,9 @@ initialize_mesh_indices()
 
 # Run sim
 for ii in range(300):
+    # --- UPDATED: Update random wind vector each frame ---
+    wind_vec[None] = ti.Vector([np.random.uniform(-1,1), 0.0, np.random.uniform(-1,1)])
+    wind_time[None] = current_t
     # TODO:
     # Call timestep() function
     # Increase current time t by dt
