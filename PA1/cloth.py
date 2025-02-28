@@ -149,39 +149,30 @@ def timestep():
         if (x[i, j].y < tabletop_upside_center[1] + contact_eps 
             and horizontal_dist < tabletop_radius):
             normal = ti.Vector([0.0, 1.0, 0.0])
-            penetration = (tabletop_upside_center[1] + contact_eps) - x[i, j].y
             # Remove only inward velocity
             v_inward = min(0.0, v[i, j].dot(normal))
             v[i, j] = v[i, j] - v_inward * normal
-            x[i, j].y += 0.000005 * penetration  # push it out of the table top
 
         # 2) Collision with tabletop side
         elif (x[i, j].y <= tabletop_upside_center[1] + contact_eps and
             x[i, j].y >= tabletop_downside_center[1] - contact_eps and
             horizontal_dist < tabletop_radius + contact_eps):
-            penetration_side = (tabletop_radius + contact_eps) - horizontal_dist
             if horizontal_dist > 1e-6:
                 normal = ti.Vector([dx, 0.0, dz]) / horizontal_dist
             else:
                 normal = ti.Vector([1.0, 0.0, 0.0])
-            x[i, j][0] += 0.0005 * penetration_side * normal[0]
-            x[i, j][2] += 0.0005 * penetration_side * normal[2]
             # Cancel inward horizontal velocity
-            horizontal_velocity = ti.Vector([v[i, j][0], 0.0, v[i, j][2]])
-            if horizontal_velocity.dot(normal) < 0:
-                v[i, j][0] = 0.0
-                v[i, j][2] = 0.0
+            v_inward = v[i, j].dot(normal)
+            v[i, j] = v[i, j] - v_inward * normal
 
         # 3) Collision with tabletop bottom face
-        if (x[i,j].y < tabletop_downside_center[1] + contact_eps and
-            x[i, j].y > tabletop_downside_center[1] - contact_eps and 
-            horizontal_dist < tabletop_radius):
-            normal = ti.Vector([0.0, -1.0, 0.0])
-            penetration = x[i, j].y - (tabletop_downside_center[1] - contact_eps)
-            # Remove only inward velocity
-            v_inward = min(0.0, v[i, j].dot(normal))
-            v[i, j] = v[i, j] - v_inward * normal
-            x[i, j].y -= 0.00005 * penetration
+        # if (x[i,j].y < tabletop_downside_center[1] + contact_eps and
+        #     x[i, j].y > tabletop_downside_center[1] - contact_eps/1000 and 
+        #     horizontal_dist < tabletop_radius):
+        #     normal = ti.Vector([0.0, -1.0, 0.0])
+        #     # Remove only inward velocity
+        #     v_inward = min(0.0, v[i, j].dot(normal))
+        #     v[i, j] = v[i, j] - v_inward * normal
 ### GUI
 
 # Data structures for drawing the mesh
