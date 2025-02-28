@@ -133,7 +133,7 @@ def timestep():
         #     min_val = ti.min(0.0, v[i, j].dot(n_collision))
         #     v[i, j] = v[i, j] - min_val * n_collision
 
-        # tabletop geometry
+        # Tabletop geometry
         tabletop_center = ti.Vector([0.5, 0.1, 0.5])
         tabletop_radius = 0.4
         tabletop_height = 0.04
@@ -143,36 +143,43 @@ def timestep():
         dx = x[i, j][0] - tabletop_center[0]
         dz = x[i, j][2] - tabletop_center[2]
         horizontal_dist = tm.sqrt(dx * dx + dz * dz)
-        normal = ti.Vector([0.0, 0.0, 0.0])
+        n_collision = ti.Vector([0.0, 1.0, 0.0])
 
-        # 1) Collision with tabletop top face
-        if (x[i, j].y < tabletop_upside_center[1] + contact_eps 
-            and horizontal_dist < tabletop_radius):
-            normal = ti.Vector([0.0, 1.0, 0.0])
-            # Remove only inward velocity
-            v_inward = min(0.0, v[i, j].dot(normal))
-            v[i, j] = v[i, j] - v_inward * normal
+        # Clamp the y coordinate to the cylinder's extent
+        y_low = tabletop_downside_center[1]
+        y_high = tabletop_upside_center[1]
+        closest_y = x[i, j][1]
+        if closest_y < y_low:
+            closest_y = y_low
+        elif closest_y > y_high:
+            closest_y = y_high
 
-        # 2) Collision with tabletop side
-        elif (x[i, j].y <= tabletop_upside_center[1] + contact_eps and
-            x[i, j].y >= tabletop_downside_center[1] - contact_eps and
-            horizontal_dist < tabletop_radius + contact_eps):
-            if horizontal_dist > 1e-6:
-                normal = ti.Vector([dx, 0.0, dz]) / horizontal_dist
+        # Clamp the horizontal coordinates to the circular boundary
+        closest_x = x[i, j][0]
+        closest_z = x[i, j][2]
+        if horizontal_dist > tabletop_radius:
+            ratio = tabletop_radius / horizontal_dist
+            closest_x = tabletop_center[0] + dx * ratio
+            closest_z = tabletop_center[2] + dz * ratio
+
+        closest_point = ti.Vector([closest_x, closest_y, closest_z])
+
+        diff_collision = x[i, j] - closest_point
+        dist_collision = diff_collision.norm()
+
+        if dist_collision < contact_eps:
+            if dist_collision > 1e-6:
+                n_collision = diff_collision / dist_collision
             else:
-                normal = ti.Vector([1.0, 0.0, 0.0])
-            # Cancel inward horizontal velocity
-            v_inward = v[i, j].dot(normal)
-            v[i, j] = v[i, j] - v_inward * normal
+                n_collision = ti.Vector([0.0, 1.0, 0.0])
 
-        # 3) Collision with tabletop bottom face
-        # if (x[i,j].y < tabletop_downside_center[1] + contact_eps and
-        #     x[i, j].y > tabletop_downside_center[1] - contact_eps/1000 and 
-        #     horizontal_dist < tabletop_radius):
-        #     normal = ti.Vector([0.0, -1.0, 0.0])
-        #     # Remove only inward velocity
-        #     v_inward = min(0.0, v[i, j].dot(normal))
-        #     v[i, j] = v[i, j] - v_inward * normal
+            inward_component = v[i, j].dot(n_collision)
+            if inward_component < 0.0:
+                v[i, j] = v[i, j] - inward_component * n_collision
+                
+            penetration_depth = contact_eps - dist_collision
+            x[i, j] = x[i, j] + penetration_depth * n_collision
+
 ### GUI
 
 # Data structures for drawing the mesh
