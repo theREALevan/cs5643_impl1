@@ -180,6 +180,15 @@ def timestep():
             penetration_depth = contact_eps - dist_collision
             x[i, j] = x[i, j] + penetration_depth * n_collision
 
+            friction_coeff = 0.025 # Friction coefficient
+            vt = v[i, j] - (v[i, j].dot(n_collision)) * n_collision
+            vt_mag = vt.norm()
+            if vt_mag > 1e-6:
+                deceleration = friction_coeff * 9.8
+                reduction = deceleration * dt
+                reduction = ti.min(reduction, vt_mag)
+                vt = vt - reduction * (vt / vt_mag)
+            v[i, j] = (v[i, j].dot(n_collision)) * n_collision + vt
 ### GUI
 
 # Data structures for drawing the mesh
