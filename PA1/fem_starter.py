@@ -33,6 +33,8 @@ Lame_mu = ti.field(ti.f32, ())
 Lame_lambda = ti.field(ti.f32, ())
 ##############################################################
 
+color_scheme = '' # 'strain' or 'hsv' or ''
+
 @ti.kernel
 def update_lame_parameters():
     Lame_mu[None] = YoungsModulus[None] / (2.0 * (1.0 + PoissonsRatio[None]))
@@ -178,7 +180,7 @@ def timestep(currmode: int):
     for i in range(N):
         force[i] = ti.Vector([0.0, 0.0])
     for i in range(N):
-        vertex_strain[i] = 0.0  # [ADDED]
+        vertex_strain[i] = 0.0
     
     for t in range(N_triangles):
         i0 = triangles[t][0]
@@ -395,60 +397,64 @@ while window.running:
     ##############################################################
     
 
+    if color_scheme != '': 
+        # Update the distance map
+        max_val = 0.0
+        for i in range(N):
+            if vertex_strain[i] > max_val:
+                max_val = vertex_strain[i]
+        # Avoid division by zero
+        if max_val < 1e-8:
+            max_val = 1e-8
 
-    # Update the distance map
-    max_val = 0.0
-    for i in range(N):
-        if vertex_strain[i] > max_val:
-            max_val = vertex_strain[i]
-    # Avoid division by zero
-    if max_val < 1e-8:
-        max_val = 1e-8
-    # for i in range(N):
-    #     c = vertex_strain[i] / max_val
-    #     per_vertex_color[i] = ti.Vector([c, 0.0, 1.0 - c])  # (blue-to-red)
+        if color_scheme == 'strain':
+            for i in range(N):
+                c = vertex_strain[i] / max_val
+                per_vertex_color[i] = ti.Vector([c, 0.0, 1.0 - c])  # (blue-to-red)
 
-    # Define a function to convert HSV to RGB
-    def hsv_to_rgb(h, s, v):
-        i = int(np.floor(h * 6.0))
-        f = h * 6.0 - i
-        p = v * (1.0 - s)
-        q = v * (1.0 - f * s)
-        t = v * (1.0 - (1.0 - f) * s)
-        i = i % 6
-        if i == 0:
-            return np.array([v, t, p])
-        elif i == 1:
-            return np.array([q, v, p])
-        elif i == 2:
-            return np.array([p, v, t])
-        elif i == 3:
-            return np.array([p, q, v])
-        elif i == 4:
-            return np.array([t, p, v])
-        else:
-            return np.array([v, p, q])
+        if color_scheme == 'hsv':
+            # Define a function to convert HSV to RGB
+            def hsv_to_rgb(h, s, v):
+                i = int(np.floor(h * 6.0))
+                f = h * 6.0 - i
+                p = v * (1.0 - s)
+                q = v * (1.0 - f * s)
+                t = v * (1.0 - (1.0 - f) * s)
+                i = i % 6
+                if i == 0:
+                    return np.array([v, t, p])
+                elif i == 1:
+                    return np.array([q, v, p])
+                elif i == 2:
+                    return np.array([p, v, t])
+                elif i == 3:
+                    return np.array([p, q, v])
+                elif i == 4:
+                    return np.array([t, p, v])
+                else:
+                    return np.array([v, p, q])
 
-    for i in range(N):
-        force_magnitude = force[i].norm()
-        if force_magnitude > 1e-1:  
-            force_direction = force[i] / force_magnitude  
-            hue = 0.5 + 0.5 * (force_direction[0] + 1) 
-            saturation = force_magnitude / max_val 
-            value = force_magnitude
-            per_vertex_color[i] = hsv_to_rgb(hue, saturation, value)
-        else:
-            per_vertex_color[i] = ti.Vector([0.0, 0.0, 0.0])  # Set to black or another default color if force is zero
+            for i in range(N):
+                force_magnitude = force[i].norm()
+                if force_magnitude > 1e-1:  
+                    force_direction = force[i] / force_magnitude  
+                    hue = 0.5 + 0.5 * (force_direction[0] + 1) 
+                    saturation = force_magnitude / max_val 
+                    value = force_magnitude
+                    per_vertex_color[i] = hsv_to_rgb(hue, saturation, value)
+                else:
+                    per_vertex_color[i] = ti.Vector([0.0, 0.0, 0.0])  # Set to black or another default color if force is zero
 
-    
-    # Override pinned vertices to show green
-    for i in range(num_pins[None]):
-        per_vertex_color[pins[i]] = pin_color
+        
+        # Override pinned vertices to show green
+        for i in range(num_pins[None]):
+            per_vertex_color[pins[i]] = pin_color
 
     # Draw wireframe of mesh
     canvas.lines(vertices=x, indices=edges, width=0.002, color=(0,0,0))
 
-    canvas.triangles(vertices=x, indices=triangles, per_vertex_color=per_vertex_color)
+    if color_scheme != '':
+        canvas.triangles(vertices=x, indices=triangles, per_vertex_color=per_vertex_color)
 
     canvas.circles(x, per_vertex_color=per_vertex_color, radius=0.005)
 
