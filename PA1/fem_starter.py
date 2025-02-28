@@ -38,7 +38,6 @@ def update_lame_parameters():
     Lame_mu[None] = YoungsModulus[None] / (2.0 * (1.0 + PoissonsRatio[None]))
     Lame_lambda[None] = YoungsModulus[None] * PoissonsRatio[None] / ((1.0 + PoissonsRatio[None]) * (1.0 - PoissonsRatio[None]))
 
-
 ## Load geometry of the simulation scenes
 obj = Wavefront('models/woody-halfres.obj', collect_faces=True)
 va = np.array(obj.vertices, dtype=np.float32)[:,:2] * 0.8
@@ -169,12 +168,17 @@ def compute_P(F):
         P_ret = Lame_mu[None] * (F - invT) + Lame_lambda[None] * ti.log(detF) * invT
     return P_ret
 
+vertex_strain = ti.field(ti.f32, shape=N)
+
 # TODO: Implement the initialization and timestepping kernel for the deformable object
 @ti.kernel
 def timestep(currmode: int):
-    # TODO: Integrate the internal elastic forces and gravity 
+    # Zero out forces and per-vertex strain
     for i in range(N):
         force[i] = ti.Vector([0.0, 0.0])
+    for i in range(N):
+        vertex_strain[i] = 0.0  # [ADDED]
+    
     for t in range(N_triangles):
         i0 = triangles[t][0]
         i1 = triangles[t][1]
@@ -194,6 +198,14 @@ def timestep(currmode: int):
         force[i1] += col0
         force[i2] += col1
         force[i0] += -(col0 + col1)
+
+        # Frobenius norm of (F - I2)
+        I2 = ti.Matrix([[1.0, 0.0], [0.0, 1.0]])
+        strain_val = (F - I2).norm_sqr()
+
+        vertex_strain[i0] += strain_val
+        vertex_strain[i1] += strain_val
+        vertex_strain[i2] += strain_val
     
     for i in range(N):
         f_total = force[i] + (m * gravity / 50 if currmode == 2 else ti.Vector([0.0, 0.0]))
@@ -381,11 +393,27 @@ while window.running:
             pass
     ##############################################################
 
-    # Draw wireframe of mesh
-    canvas.lines(vertices=x,indices=edges,width=0.002,color=(0,0,0))
+    # Update the distance map
+    max_val = 0.0
+    for i in range(N):
+        if vertex_strain[i] > max_val:
+            max_val = vertex_strain[i]
+    # Avoid division by zero
+    if max_val < 1e-8:
+        max_val = 1e-8
+    for i in range(N):
+        c = vertex_strain[i] / max_val
+        per_vertex_color[i] = ti.Vector([c, 0.0, 1.0 - c])  # (blue-to-red)
+    
+    # Override pinned vertices to show green
+    for i in range(num_pins[None]):
+        per_vertex_color[pins[i]] = pin_color
 
-    # Draw a circle at each vertex
-    # Some of them are highlighted / pinned
+    # Draw wireframe of mesh
+    canvas.lines(vertices=x, indices=edges, width=0.002, color=(0,0,0))
+
+    canvas.triangles(vertices=x, indices=triangles, per_vertex_color=per_vertex_color)
+
     canvas.circles(x, per_vertex_color=per_vertex_color, radius=0.005)
 
     # Draw the gingerbread house if we switch to collision testing mode
