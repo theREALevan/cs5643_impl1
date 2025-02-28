@@ -10,7 +10,7 @@ ti.init(arch=ti.vulkan)
 # Collision Obstacle
 obstacle = Scene(Init.CLOTH_TABLE)
 contact_eps = 1e-2
-record = False
+record = True
 
 # cloth is square with n x n particles
 # Use smaller n values for debugging
@@ -74,7 +74,7 @@ def timestep():
 
         force = particle_mass * gravity
         
-        wind_strength = 0.0005
+        wind_strength = 0.0004
         wind = wind_strength * wind_vec[None]
         force += wind
         
@@ -257,7 +257,6 @@ initialize_mesh_indices()
 
 # Run sim
 for ii in range(300):
-    # --- UPDATED: Update random wind vector each frame ---
     wind_vec[None] = ti.Vector([np.random.uniform(-1,1), 0.0, np.random.uniform(-1,1)])
     wind_time[None] = current_t
     # TODO:
